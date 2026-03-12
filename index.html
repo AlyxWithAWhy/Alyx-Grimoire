@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#080611"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Grimoire"/>
+  <meta name="description" content="Alyx's Life RPG Grimoire"/>
+  <link rel="manifest" href="manifest.json"/>
+  <!-- Apple touch icon fallback (emoji rendered to canvas by JS below) -->
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+  <title>Alyx's Grimoire</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #080611; color: #e2d9f3; font-family: 'Crimson Pro', Georgia, serif; overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 4px; }
+    @keyframes floatUp {
+      0%   { transform: translateY(0); opacity: 0; }
+      10%  { opacity: 1; }
+      90%  { opacity: .4; }
+      100% { transform: translateY(-100vh) scale(.2); opacity: 0; }
+    }
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position:  200% center; }
+    }
+    @keyframes rise {
+      0%   { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-50px); opacity: 0; }
+    }
+    @keyframes glow {
+      0%,100% { box-shadow: 0 0 18px rgba(139,92,246,.3), inset 0 0 18px rgba(139,92,246,.04); }
+      50%      { box-shadow: 0 0 36px rgba(139,92,246,.55), inset 0 0 28px rgba(139,92,246,.09); }
+    }
+    @keyframes lvlPop {
+      0%   { opacity:0; transform:scale(.7); }
+      20%  { opacity:1; transform:scale(1.05); }
+      80%  { opacity:1; transform:scale(1); }
+      100% { opacity:0; transform:scale(.9); }
+    }
+    @keyframes redeemFlash {
+      0%,100% { background: rgba(25,10,50,.95); }
+      50%     { background: rgba(109,40,217,.35); }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    .qcard:hover   { transform: translateY(-2px); transition: transform .2s; }
+    .filtbtn       { cursor: pointer; transition: all .15s; }
+    .cbtn:hover    { transform: scale(1.08); }
+    .cbtn:active   { transform: scale(.93); }
+    .rbtn:hover:not(:disabled) { transform: scale(1.03); cursor: pointer; }
+    .rbtn:disabled { opacity: .45; cursor: not-allowed; }
+    .tab           { transition: all .2s; cursor: pointer; border: none; background: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React + Babel via CDN — no build step needed -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // ── Storage (localStorage for PWA) ────────────────────────────────────────
+    const STORAGE_KEY = "alyx-grimoire-v2";
+    const store = {
+      get: () => { try { const v = localStorage.getItem(STORAGE_KEY); return v ? JSON.parse(v) : null; } catch { return null; } },
+      set: (val) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(val)); } catch {} },
+    };
+
+    // ── Constants ─────────────────────────────────────────────────────────────
+    const LEVEL_XP   = [0,100,250,450,700,1000,1400,1900,2500,3200,4000];
+    const DIFF_COLOR = { easy:"#4ade80", medium:"#facc15", hard:"#f87171" };
+    const DIFF_LABEL = { easy:"Cantrip",  medium:"Ritual",  hard:"Arcane Surge" };
+
+    const DEFAULT_QUESTS = [
+      { id:1,  title:"Wash the dishes",                cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Aqua Cleanse",        streak:0 },
+      { id:2,  title:"Wipe counters & stovetop",        cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Purify Surface",       streak:0 },
+      { id:3,  title:"Deep-clean the kitchen",          cat:"home", diff:"hard",   xp:60, pts:25, spell:"Sanctify the Hearth",  streak:0 },
+      { id:4,  title:"Clear one surface (5 min)",       cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Banish Clutter",       streak:0 },
+      { id:5,  title:"Tidy one full room",              cat:"home", diff:"hard",   xp:60, pts:25, spell:"Chaos to Order",       streak:0 },
+      { id:6,  title:"Throw away 10 items",             cat:"home", diff:"medium", xp:25, pts:12, spell:"Void Disposal",        streak:0 },
+      { id:7,  title:"Put away 3 misplaced things",     cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Restoration Rite",     streak:0 },
+      { id:8,  title:"Research 3 target companies",     cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Scholar's Eye",        streak:0 },
+      { id:9,  title:"Find 5 job postings",             cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Seeker's Compass",     streak:0 },
+      { id:10, title:"Submit one application",          cat:"work", diff:"medium", xp:40, pts:12, spell:"Fate's Missive",       streak:0 },
+      { id:11, title:"Submit three applications",       cat:"work", diff:"hard",   xp:90, pts:25, spell:"Storm of Scrolls",     streak:0 },
+      { id:12, title:"Tailor resume for one role",      cat:"work", diff:"medium", xp:35, pts:12, spell:"Shape-Shift Grimoire", streak:0 },
+      { id:13, title:"Write one cover letter",          cat:"work", diff:"hard",   xp:55, pts:25, spell:"Words of Power",       streak:0 },
+      { id:14, title:"Proofread & polish a doc",        cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Clarity Rune",         streak:0 },
+      { id:15, title:"Send one LinkedIn message",       cat:"work", diff:"easy",   xp:25, pts:5,  spell:"Arcane Whisper",       streak:0 },
+      { id:16, title:"Reach out to 3 contacts",         cat:"work", diff:"medium", xp:45, pts:12, spell:"Web of Threads",       streak:0 },
+      { id:17, title:"Follow up on a past application", cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Echo Pulse",           streak:0 },
+    ];
+
+    const DEFAULT_REWARDS = [
+      { id:"r1", title:"Fancy coffee or treat",      cost:20, icon:"☕", cat:"treat"  },
+      { id:"r2", title:"30 min guilt-free gaming",   cost:15, icon:"🎮", cat:"screen" },
+      { id:"r3", title:"Episode of a show",          cost:20, icon:"📺", cat:"screen" },
+      { id:"r4", title:"Skip one easy task today",   cost:10, icon:"🌙", cat:"skip"   },
+      { id:"r5", title:"Full guilt-free rest day",   cost:50, icon:"🛌", cat:"skip"   },
+      { id:"r6", title:"Order takeout",              cost:40, icon:"🍜", cat:"treat"  },
+      { id:"r7", title:"Buy something small (≤$10)", cost:60, icon:"✨", cat:"treat"  },
+      { id:"r8", title:"Movie night",                cost:30, icon:"🎬", cat:"screen" },
+      { id:"r9", title:"+$1 toward new tattoo",      cost:10, icon:"🩸", cat:"tattoo", tattooValue:1 },
+    ];
+
+    const INIT = {
+      character: { name:"Alyx", cls:"Void Sorcerer", xp:0, pts:0, streakDays:0, streakFreezes:2, lastDate:null },
+      quests: DEFAULT_QUESTS,
+      completedToday: [],
+      rewards: DEFAULT_REWARDS,
+      rewardLog: [],
+      log: [],
+      tattooBudget: 0,
+    };
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    const todayStr = () => new Date().toISOString().split("T")[0];
+    const getLevel = xp => { for(let i=LEVEL_XP.length-1;i>=0;i--) if(xp>=LEVEL_XP[i]) return i+1; return 1; };
+    const xpFloor  = lvl => LEVEL_XP[Math.min(lvl-1, LEVEL_XP.length-1)];
+    const xpCeil   = lvl => LEVEL_XP[Math.min(lvl,   LEVEL_XP.length-1)];
+
+    // ── Particles ─────────────────────────────────────────────────────────────
+    function Particles() {
+      const ps = React.useMemo(() =>
+        Array.from({length:16},(_,i)=>({
+          id:i,
+          left:`${5+Math.random()*90}%`,
+          delay:`${Math.random()*10}s`,
+          dur:`${7+Math.random()*9}s`,
+          sz: Math.random()>0.5 ? 3 : 2
+        })), []);
+      return (
+        <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>
+          {ps.map(p=>(
+            <div key={p.id} style={{position:"absolute",left:p.left,bottom:"-8px",width:p.sz,height:p.sz,borderRadius:"50%",background:"rgba(167,139,250,0.5)",boxShadow:"0 0 6px rgba(167,139,250,0.8)",animation:`floatUp ${p.dur} ${p.delay} infinite linear`}}/>
+          ))}
+        </div>
+      );
+    }
+
+    function XpBar({xp}) {
+      const lvl=getLevel(xp), fl=xpFloor(lvl), cl=xpCeil(lvl);
+      const pct=Math.min(100,((xp-fl)/(cl-fl))*100);
+      return (
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#6d28d9",letterSpacing:1,marginBottom:5}}>
+            <span>ARCANE POWER — LV {lvl}</span><span>{xp-fl} / {cl-fl} XP</span>
+          </div>
+          <div style={{height:7,background:"rgba(109,40,217,0.2)",borderRadius:4,overflow:"hidden",border:"1px solid rgba(109,40,217,0.3)"}}>
+            <div style={{height:"100%",width:`${pct}%`,borderRadius:4,background:"linear-gradient(90deg,#7c3aed,#c084fc,#e879f9)",backgroundSize:"200% auto",animation:"shimmer 3s linear infinite",transition:"width 0.6s ease",boxShadow:"0 0 10px rgba(196,181,253,0.5)"}}/>
+          </div>
+        </div>
+      );
+    }
+
+    function StatPill({icon,value,label,color}) {
+      return (
+        <div style={{textAlign:"center",minWidth:52}}>
+          <div style={{fontSize:22,lineHeight:1}}>{icon}</div>
+          <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:16,color,marginTop:2,textShadow:`0 0 12px ${color}88`}}>{value}</div>
+          <div style={{fontSize:10,color:"#6d28d9",letterSpacing:1,textTransform:"uppercase",marginTop:1}}>{label}</div>
+        </div>
+      );
+    }
+
+    // ── Main App ──────────────────────────────────────────────────────────────
+    function AlyxGrimoire() {
+      const [state,      setState]      = useState(null);
+      const [tab,        setTab]        = useState("quests");
+      const [diff,       setDiff]       = useState("all");
+      const [cat,        setCat]        = useState("all");
+      const [popups,     setPopups]     = useState([]);
+      const [levelUp,    setLevelUp]    = useState(false);
+      const [loading,    setLoading]    = useState(true);
+      const [redeemAnim, setRedeemAnim] = useState(null);
+      const [tattooSpend,setTattooSpend]= useState("");
+
+      // Load
+      useEffect(()=>{
+        const saved = store.get();
+        if(saved) {
+          if(saved.tattooBudget===undefined) saved.tattooBudget=0;
+          if(!saved.rewards.find(x=>x.id==="r9")) saved.rewards.push({ id:"r9", title:"+$1 toward new tattoo", cost:10, icon:"🩸", cat:"tattoo", tattooValue:1 });
+          setState(saved);
+        } else {
+          setState(INIT);
+        }
+        setLoading(false);
+      },[]);
+
+      // Save on every change
+      useEffect(()=>{ if(state) store.set(state); },[state]);
+
+      // Streak check
+      useEffect(()=>{
+        if(!state) return;
+        const today=todayStr(), last=state.character.lastDate;
+        if(!last) return;
+        const d=Math.floor((new Date(today)-new Date(last))/86400000);
+        if(d<=1) return;
+        if(d===2 && state.character.streakFreezes>0) {
+          setState(p=>({...p,character:{...p.character,streakFreezes:p.character.streakFreezes-1,lastDate:today}}));
+        } else if(d>=2) {
+          setState(p=>({...p,character:{...p.character,streakDays:0}}));
+        }
+      // eslint-disable-next-line
+      },[!!state]);
+
+      const spawnPopup = useCallback((xp,pts,spell)=>{
+        const id=Date.now()+Math.random();
+        setPopups(ps=>[...ps,{id,xp,pts,spell}]);
+        setTimeout(()=>setPopups(ps=>ps.filter(p=>p.id!==id)),1600);
+      },[]);
+
+      const completeQuest = useCallback(qid=>{
+        setState(prev=>{
+          if(!prev||prev.completedToday.includes(qid)) return prev;
+          const q=prev.quests.find(x=>x.id===qid); if(!q) return prev;
+          const newXP=prev.character.xp+q.xp, newPts=prev.character.pts+q.pts;
+          const oldLvl=getLevel(prev.character.xp), newLvl=getLevel(newXP);
+          if(newLvl>oldLvl) setTimeout(()=>{setLevelUp(true);setTimeout(()=>setLevelUp(false),2800);},80);
+          const today=todayStr(), last=prev.character.lastDate;
+          const d=last?Math.floor((new Date(today)-new Date(last))/86400000):999;
+          const newStreak=d===0?prev.character.streakDays:(d===1?prev.character.streakDays+1:1);
+          spawnPopup(q.xp,q.pts,q.spell);
+          return {
+            ...prev,
+            character:{...prev.character,xp:newXP,pts:newPts,streakDays:newStreak,lastDate:today},
+            quests:prev.quests.map(x=>x.id===qid?{...x,streak:x.streak+1}:x),
+            completedToday:[...prev.completedToday,qid],
+            log:[{id:Date.now(),spell:q.spell,title:q.title,xp:q.xp,pts:q.pts,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})},...prev.log.slice(0,29)],
+          };
+        });
+      },[spawnPopup]);
+
+      const redeemReward = useCallback(reward=>{
+        setState(prev=>{
+          if(!prev||prev.character.pts<reward.cost) return prev;
+          setRedeemAnim(reward.id);
+          setTimeout(()=>setRedeemAnim(null),900);
+          const tattooAdd=reward.tattooValue||0;
+          return {
+            ...prev,
+            character:{...prev.character,pts:prev.character.pts-reward.cost},
+            tattooBudget:(prev.tattooBudget||0)+tattooAdd,
+            rewardLog:[{id:Date.now(),title:reward.title,icon:reward.icon,cost:reward.cost,tattooAdd,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})},...(prev.rewardLog||[]).slice(0,19)],
+          };
+        });
+      },[]);
+
+      const resetDay = ()=>setState(p=>p?{...p,completedToday:[]}:p);
+
+      const spendTattooBudget = useCallback(amount=>{
+        setState(prev=>{
+          if(!prev) return prev;
+          const amt=parseFloat(amount);
+          if(isNaN(amt)||amt<=0) return prev;
+          return {...prev,tattooBudget:Math.max(0,(prev.tattooBudget||0)-amt)};
+        });
+      },[]);
+
+      const exportBackup = useCallback(()=>{
+        if(!state) return;
+        const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");
+        a.href=url;
+        a.download=`alyx-grimoire-backup-${new Date().toISOString().split("T")[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      },[state]);
+
+      const importBackup = useCallback(e=>{
+        const file=e.target.files?.[0]; if(!file) return;
+        const reader=new FileReader();
+        reader.onload=evt=>{
+          try {
+            const parsed=JSON.parse(evt.target.result);
+            if(!parsed.character||!parsed.quests){alert("Invalid backup file.");return;}
+            setState(parsed);
+            alert("✦ Grimoire restored successfully!");
+          } catch { alert("Could not read backup file."); }
+        };
+        reader.readAsText(file);
+        e.target.value="";
+      },[]);
+
+      if(loading||!state) return (
+        <div style={{minHeight:"100vh",background:"#080611",display:"flex",alignItems:"center",justifyContent:"center",color:"#a78bfa"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:44,animation:"spin 3s linear infinite",display:"inline-block"}}>✦</div>
+            <div style={{marginTop:14,letterSpacing:4,textTransform:"uppercase",fontSize:12,fontFamily:"'Cinzel Decorative',serif"}}>Opening Grimoire…</div>
+          </div>
+        </div>
+      );
+
+      const {character,quests,completedToday,rewards,rewardLog,log,tattooBudget}=state;
+      const filtered=quests.filter(q=>(diff==="all"||q.diff===diff)&&(cat==="all"||q.cat===cat));
+      const canAfford=r=>character.pts>=r.cost;
+      const lvl=getLevel(character.xp);
+
+      return (
+        <div style={{minHeight:"100vh",background:"#080611",fontFamily:"'Crimson Pro',Georgia,serif",color:"#e2d9f3",position:"relative",overflow:"hidden"}}>
+          <Particles/>
+
+          {/* Level-up overlay */}
+          {levelUp&&(
+            <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(ellipse at center,rgba(139,92,246,.4) 0%,transparent 70%)",pointerEvents:"none"}}>
+              <div style={{textAlign:"center",animation:"lvlPop 2.8s ease forwards"}}>
+                <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:40,color:"#c4b5fd",textShadow:"0 0 50px rgba(196,181,253,1),0 0 100px rgba(139,92,246,.8)",letterSpacing:4}}>LEVEL UP</div>
+                <div style={{fontSize:18,color:"#a78bfa",marginTop:8,letterSpacing:2}}>Alyx grows more powerful</div>
+              </div>
+            </div>
+          )}
+
+          {/* XP/pts popups */}
+          <div style={{position:"fixed",top:90,right:16,zIndex:150,pointerEvents:"none"}}>
+            {popups.map(p=>(
+              <div key={p.id} style={{animation:"rise 1.6s ease forwards",marginBottom:6,textAlign:"right"}}>
+                <div style={{color:"#86efac",fontFamily:"'Cinzel Decorative',serif",fontSize:14,textShadow:"0 0 12px rgba(134,239,172,.9)"}}>+{p.xp} XP</div>
+                <div style={{color:"#fcd34d",fontSize:13}}>+{p.pts} pts</div>
+                <div style={{color:"#c4b5fd",fontSize:11,letterSpacing:1}}>{p.spell}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{maxWidth:760,margin:"0 auto",padding:"env(safe-area-inset-top, 16px) 14px 32px",position:"relative",zIndex:1,paddingTop:"max(env(safe-area-inset-top), 16px)"}}>
+
+            {/* Character card */}
+            <div style={{background:"linear-gradient(135deg,rgba(28,8,58,.97),rgba(12,4,30,.99))",border:"1px solid rgba(139,92,246,.38)",borderRadius:16,padding:"22px 20px 18px",marginBottom:16,animation:"glow 4s ease-in-out infinite",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:-30,right:-20,fontSize:130,opacity:.03,color:"#a78bfa",userSelect:"none",transform:"rotate(12deg)"}}>✦</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
+                <div>
+                  <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:24,color:"#c4b5fd",textShadow:"0 0 22px rgba(196,181,253,.55)",letterSpacing:2}}>{character.name}</div>
+                  <div style={{fontSize:12,color:"#7c3aed",letterSpacing:3,textTransform:"uppercase",marginTop:3,fontWeight:300}}>{character.cls} · Level {lvl}</div>
+                </div>
+                <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                  <StatPill icon="✨" value={character.xp}          label="Total XP" color="#a78bfa"/>
+                  <StatPill icon="🪙" value={character.pts}         label="Points"   color="#fcd34d"/>
+                  <StatPill icon="🔥" value={character.streakDays}  label="Streak"   color="#fb923c"/>
+                  <StatPill icon="❄️" value={character.streakFreezes} label="Freezes" color="#67e8f9"/>
+                </div>
+              </div>
+              <div style={{marginTop:16}}><XpBar xp={character.xp}/></div>
+              <div style={{marginTop:10,fontSize:13,color:"#5b21b6",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span>⚔️ {completedToday.length} {completedToday.length===1?"spell":"spells"} cast today</span>
+                {completedToday.length>0&&<button onClick={resetDay} style={{fontSize:11,color:"#4c1d95",background:"none",border:"1px solid #3b0764",borderRadius:4,padding:"2px 8px",cursor:"pointer",letterSpacing:1}}>Reset Day</button>}
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{display:"flex",gap:0,marginBottom:14,borderBottom:"1px solid rgba(109,40,217,.2)",overflowX:"auto"}}>
+              {[["quests","📜 Spells"],["rewards","🪙 Shop"],["log","📖 Log"],["backup","🔒 Backup"]].map(([t,label])=>(
+                <button key={t} className="tab" onClick={()=>setTab(t)} style={{padding:"9px 14px",fontFamily:"'Crimson Pro',serif",fontSize:14,letterSpacing:.5,color:tab===t?"#c4b5fd":"#6d28d9",borderBottom:`2px solid ${tab===t?"#7c3aed":"transparent"}`,marginBottom:-1,background:"none",border:"none",borderBottom:`2px solid ${tab===t?"#7c3aed":"transparent"}`,paddingBottom:10,cursor:"pointer",whiteSpace:"nowrap"}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* QUESTS */}
+            {tab==="quests"&&(
+              <>
+                <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}>
+                  {[["all","All"],["easy","Cantrips"],["medium","Rituals"],["hard","Surge"]].map(([v,l])=>(
+                    <button key={v} className="filtbtn" onClick={()=>setDiff(v)} style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${diff===v?"#7c3aed":"#2e1065"}`,background:diff===v?"rgba(109,40,217,.28)":"transparent",color:diff===v?"#c4b5fd":"#6d28d9",fontSize:12,fontFamily:"'Crimson Pro',serif"}}>{l}</button>
+                  ))}
+                  <div style={{width:1,background:"#2e1065",margin:"0 2px"}}/>
+                  {[["all","All"],["home","🏚 Home"],["work","📜 Work"]].map(([v,l])=>(
+                    <button key={v} className="filtbtn" onClick={()=>setCat(v)} style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${cat===v?"#7c3aed":"#2e1065"}`,background:cat===v?"rgba(109,40,217,.28)":"transparent",color:cat===v?"#c4b5fd":"#6d28d9",fontSize:12,fontFamily:"'Crimson Pro',serif"}}>{l}</button>
+                  ))}
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {filtered.map(q=>{
+                    const done=completedToday.includes(q.id), dc=DIFF_COLOR[q.diff];
+                    return (
+                      <div key={q.id} className="qcard" style={{background:done?"linear-gradient(135deg,rgba(18,8,38,.7),rgba(10,4,24,.8))":"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:`1px solid ${done?"rgba(109,40,217,.12)":"rgba(109,40,217,.28)"}`,borderLeft:`3px solid ${done?"#3b0764":dc}`,borderRadius:10,padding:"13px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,opacity:done?.48:1,transition:"all .3s"}}>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                            <span style={{fontSize:12}}>{q.cat==="home"?"🏚️":"📜"}</span>
+                            <span style={{fontSize:15,color:done?"#4c1d95":"#e2d9f3",textDecoration:done?"line-through":"none"}}>{q.title}</span>
+                            {q.streak>0&&<span style={{fontSize:11,color:"#fb923c",background:"rgba(251,146,60,.1)",padding:"1px 5px",borderRadius:8,border:"1px solid rgba(251,146,60,.2)"}}>🔥{q.streak}</span>}
+                          </div>
+                          <div style={{marginTop:4,display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+                            <span style={{fontSize:11,color:dc,opacity:.85,letterSpacing:1,textTransform:"uppercase"}}>{DIFF_LABEL[q.diff]}</span>
+                            <span style={{fontSize:10,color:"#4c1d95"}}>·</span>
+                            <span style={{fontSize:11,color:"#7c3aed",fontStyle:"italic"}}>{q.spell}</span>
+                            <span style={{fontSize:10,color:"#4c1d95"}}>·</span>
+                            <span style={{fontSize:11,color:"#86efac"}}>+{q.xp} XP</span>
+                            <span style={{fontSize:11,color:"#fcd34d"}}>+{q.pts} pts</span>
+                          </div>
+                        </div>
+                        <button className="cbtn" onClick={()=>!done&&completeQuest(q.id)} disabled={done} style={{width:36,height:36,borderRadius:"50%",border:`2px solid ${done?"#3b0764":dc}`,background:done?"rgba(59,7,100,.25)":"transparent",color:done?"#3b0764":dc,fontSize:16,cursor:done?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:done?"none":`0 0 10px ${dc}44`,transition:"all .2s"}}>
+                          {done?"✓":"◈"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* REWARDS */}
+            {tab==="rewards"&&(
+              <div>
+                <div style={{marginBottom:14,fontSize:14,color:"#6d28d9",letterSpacing:1}}>
+                  You have <span style={{color:"#fcd34d",fontFamily:"'Cinzel Decorative',serif",fontSize:16}}>{character.pts}</span> <span style={{color:"#a78bfa"}}>arcane points</span> to spend.
+                </div>
+
+                {/* Tattoo fund */}
+                <div style={{background:"linear-gradient(135deg,rgba(30,5,30,.97),rgba(15,3,20,.99))",border:"1px solid rgba(244,114,182,.35)",borderRadius:14,padding:"16px 18px",marginBottom:18,position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:-18,right:-10,fontSize:70,opacity:.06,color:"#f472b6",userSelect:"none"}}>🩸</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{fontSize:20}}>🩸</span>
+                    <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:12,color:"#f472b6",letterSpacing:2,textTransform:"uppercase"}}>Tattoo Fund</span>
+                  </div>
+                  <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:32,color:"#f9a8d4",textShadow:"0 0 20px rgba(249,168,212,.5)",marginBottom:2}}>${(tattooBudget||0).toFixed(2)}</div>
+                  <div style={{fontSize:12,color:"#9d174d",letterSpacing:1,marginBottom:12}}>saved toward your next tattoo</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <input type="number" min="0" step="1" placeholder="Amount spent ($)" value={tattooSpend} onChange={e=>setTattooSpend(e.target.value)}
+                      style={{background:"rgba(30,5,30,.8)",border:"1px solid rgba(244,114,182,.3)",borderRadius:8,padding:"7px 10px",color:"#f9a8d4",fontSize:14,fontFamily:"'Crimson Pro',serif",width:160,outline:"none"}}/>
+                    <button onClick={()=>{if(tattooSpend){spendTattooBudget(tattooSpend);setTattooSpend("");}}} disabled={!tattooSpend||parseFloat(tattooSpend)<=0}
+                      style={{padding:"7px 14px",borderRadius:8,border:"1px solid rgba(244,114,182,.4)",background:"rgba(157,23,77,.25)",color:"#f9a8d4",fontSize:13,fontFamily:"'Crimson Pro',serif",cursor:tattooSpend&&parseFloat(tattooSpend)>0?"pointer":"not-allowed",opacity:tattooSpend&&parseFloat(tattooSpend)>0?1:.45,transition:"all .2s"}}>
+                      Got a tattoo! Subtract
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+                  {rewards.map(r=>{
+                    const affordable=canAfford(r), flashing=redeemAnim===r.id;
+                    return (
+                      <div key={r.id} style={{background:flashing?"rgba(109,40,217,.35)":"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:`1px solid ${affordable?"rgba(252,211,77,.3)":"rgba(109,40,217,.15)"}`,borderRadius:12,padding:"16px 14px",display:"flex",flexDirection:"column",gap:8,animation:flashing?"redeemFlash .9s ease":"none",transition:"border .3s"}}>
+                        <div style={{fontSize:28,lineHeight:1}}>{r.icon}</div>
+                        <div style={{fontSize:15,color:"#e2d9f3"}}>{r.title}</div>
+                        <div style={{marginTop:"auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                          <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:14,color:"#fcd34d",textShadow:"0 0 10px rgba(252,211,77,.5)"}}>{r.cost} pts</span>
+                          <button className="rbtn" onClick={()=>affordable&&redeemReward(r)} disabled={!affordable}
+                            style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${affordable?"#7c3aed":"#3b0764"}`,background:affordable?"rgba(109,40,217,.3)":"transparent",color:affordable?"#c4b5fd":"#3b0764",fontSize:12,fontFamily:"'Crimson Pro',serif",transition:"all .2s"}}>
+                            {affordable?"Redeem":"Locked"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {rewardLog?.length>0&&(
+                  <div style={{marginTop:20}}>
+                    <div style={{fontSize:11,color:"#4c1d95",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Recent Redemptions</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      {rewardLog.slice(0,8).map(r=>(
+                        <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#6d28d9",borderBottom:"1px solid rgba(109,40,217,.1)",paddingBottom:5}}>
+                          <span>{r.icon}</span>
+                          <span style={{flex:1,color:"#a78bfa"}}>{r.title}</span>
+                          {r.tattooAdd>0&&<span style={{color:"#f9a8d4",fontSize:12}}>+${r.tattooAdd}</span>}
+                          <span style={{color:"#fcd34d",fontSize:12}}>−{r.cost} pts</span>
+                          <span style={{color:"#3b0764",fontSize:11}}>{r.time}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* LOG */}
+            {tab==="log"&&(
+              <div>
+                {log.length===0?(
+                  <div style={{textAlign:"center",padding:"40px 0",color:"#3b0764",fontSize:14,letterSpacing:2,textTransform:"uppercase"}}>No spells cast yet.<br/>Complete a quest to begin.</div>
+                ):(
+                  <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                    {log.map(entry=>(
+                      <div key={entry.id} style={{display:"flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,rgba(20,7,44,.9),rgba(10,3,25,.95))",border:"1px solid rgba(109,40,217,.18)",borderRadius:9,padding:"11px 13px"}}>
+                        <div style={{fontSize:18}}>✦</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,color:"#c4b5fd",fontStyle:"italic"}}>{entry.spell}</div>
+                          <div style={{fontSize:12,color:"#6d28d9",marginTop:2}}>{entry.title}</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:12,color:"#86efac"}}>+{entry.xp} XP</div>
+                          <div style={{fontSize:11,color:"#fcd34d"}}>+{entry.pts} pts</div>
+                          <div style={{fontSize:10,color:"#3b0764",marginTop:2}}>{entry.time}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* BACKUP */}
+            {tab==="backup"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14,maxWidth:480}}>
+                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.28)",borderRadius:12,padding:"15px 16px",fontSize:14,color:"#7c3aed",lineHeight:1.7}}>
+                  <div style={{color:"#c4b5fd",fontFamily:"'Cinzel Decorative',serif",fontSize:12,letterSpacing:2,marginBottom:8}}>PROTECT YOUR PROGRESS</div>
+                  Your XP, points, streaks, and tattoo fund are saved on this device. Export regularly and keep the file somewhere safe (Google Drive, iCloud, email to yourself).
+                </div>
+                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"18px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:22}}>📤</span>
+                    <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:12,color:"#c4b5fd",letterSpacing:2}}>EXPORT BACKUP</span>
+                  </div>
+                  <div style={{fontSize:13,color:"#6d28d9",marginBottom:12,lineHeight:1.6}}>Downloads a <code style={{color:"#a78bfa",background:"rgba(109,40,217,.15)",padding:"1px 4px",borderRadius:3}}>.json</code> file with all your progress.</div>
+                  <button onClick={exportBackup} style={{padding:"9px 20px",borderRadius:9,border:"1px solid #7c3aed",background:"rgba(109,40,217,.3)",color:"#c4b5fd",fontSize:14,fontFamily:"'Crimson Pro',serif",cursor:"pointer",letterSpacing:.5,boxShadow:"0 0 12px rgba(139,92,246,.2)"}}>
+                    ✦ Download Backup
+                  </button>
+                </div>
+                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"18px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                    <span style={{fontSize:22}}>📥</span>
+                    <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:12,color:"#c4b5fd",letterSpacing:2}}>RESTORE BACKUP</span>
+                  </div>
+                  <div style={{fontSize:13,color:"#6d28d9",marginBottom:12,lineHeight:1.6}}>Load a previously exported file. <span style={{color:"#f87171"}}>This will overwrite your current data.</span></div>
+                  <label style={{display:"inline-block",padding:"9px 20px",borderRadius:9,border:"1px solid rgba(248,113,113,.4)",background:"rgba(127,29,29,.2)",color:"#fca5a5",fontSize:14,fontFamily:"'Crimson Pro',serif",cursor:"pointer"}}>
+                    ✦ Load Backup File
+                    <input type="file" accept=".json" onChange={importBackup} style={{display:"none"}}/>
+                  </label>
+                </div>
+                <div style={{fontSize:12,color:"#3b0764",textAlign:"center",letterSpacing:1}}>Progress auto-saves to this device after every action.</div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<AlyxGrimoire/>);
+  </script>
+
+  <!-- PWA service worker registration -->
+  <script>
+    if("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(()=>{});
+      });
+    }
+
+    // Generate placeholder icons via canvas (no image files needed)
+    function makeIcon(size) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      // Background
+      ctx.fillStyle = "#080611";
+      ctx.fillRect(0,0,size,size);
+      // Outer glow ring
+      const grad = ctx.createRadialGradient(size/2,size/2,size*0.2,size/2,size/2,size*0.48);
+      grad.addColorStop(0,"rgba(139,92,246,0.15)");
+      grad.addColorStop(1,"rgba(139,92,246,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,size,size);
+      // Border circle
+      ctx.strokeStyle = "rgba(139,92,246,0.6)";
+      ctx.lineWidth = size * 0.025;
+      ctx.beginPath();
+      ctx.arc(size/2,size/2,size*0.45,0,Math.PI*2);
+      ctx.stroke();
+      // ✦ symbol
+      ctx.fillStyle = "#c4b5fd";
+      ctx.font = `${size*0.45}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(196,181,253,0.8)";
+      ctx.shadowBlur = size * 0.1;
+      ctx.fillText("✦", size/2, size/2);
+      return canvas.toDataURL("image/png");
+    }
+
+    // Inject apple-touch-icon dynamically
+    window.addEventListener("DOMContentLoaded", ()=>{
+      const icon192 = makeIcon(192);
+      const link = document.querySelector("link[rel='apple-touch-icon']");
+      if(link) link.href = icon192;
+    });
+  </script>
+</body>
+</html>
