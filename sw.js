@@ -1,4 +1,4 @@
-const CACHE = "alyx-grimoire-v1";
+const CACHE = "alyx-grimoire-v2";
 const ASSETS = ["/", "/index.html"];
 
 self.addEventListener("install", e => {
