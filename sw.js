@@ -1,10 +1,6 @@
-const CACHE = "alyx-grimoire-v2";
-const ASSETS = ["/", "/index.html"];
+const CACHE = "alyx-grimoire-v3";
 
 self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS))
-  );
   self.skipWaiting();
 });
 
@@ -17,8 +13,18 @@ self.addEventListener("activate", e => {
   self.clients.claim();
 });
 
+// Network-first: always fetch fresh from network, cache only as offline fallback.
+// App updates now deploy automatically — no cache clearing ever needed.
 self.addEventListener("fetch", e => {
+  if (e.request.method !== "GET") return;
+
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(networkRes => {
+        const copy = networkRes.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return networkRes;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
