@@ -7,9 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="Grimoire"/>
-  <meta name="description" content="Alyx's Life RPG Grimoire"/>
   <link rel="manifest" href="manifest.json"/>
-  <!-- Apple touch icon fallback (emoji rendered to canvas by JS below) -->
   <link rel="apple-touch-icon" href="icon-192.png"/>
   <title>Alyx's Grimoire</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -54,6 +52,10 @@
       from { transform: rotate(0deg); }
       to   { transform: rotate(360deg); }
     }
+    @keyframes fadeIn {
+      from { opacity:0; transform:translateY(8px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
     .qcard:hover   { transform: translateY(-2px); transition: transform .2s; }
     .filtbtn       { cursor: pointer; transition: all .15s; }
     .cbtn:hover    { transform: scale(1.08); }
@@ -61,49 +63,76 @@
     .rbtn:hover:not(:disabled) { transform: scale(1.03); cursor: pointer; }
     .rbtn:disabled { opacity: .45; cursor: not-allowed; }
     .tab           { transition: all .2s; cursor: pointer; border: none; background: none; }
+    input, textarea, select {
+      background: rgba(23,8,50,.9);
+      border: 1px solid rgba(109,40,217,.4);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #e2d9f3;
+      font-family: 'Crimson Pro', serif;
+      font-size: 14px;
+      outline: none;
+      width: 100%;
+    }
+    input::placeholder, textarea::placeholder { color: #4c1d95; }
+    input:focus, textarea:focus, select:focus { border-color: rgba(139,92,246,.7); }
+    select option { background: #1a0535; }
   </style>
 </head>
 <body>
   <div id="root"></div>
-
-  <!-- React + Babel via CDN — no build step needed -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-    // ── Storage (localStorage for PWA) ────────────────────────────────────────
-    const STORAGE_KEY = "alyx-grimoire-v2";
+    // ── Storage ───────────────────────────────────────────────────────────────
+    const STORAGE_KEY = "alyx-grimoire-v3";
     const store = {
       get: () => { try { const v = localStorage.getItem(STORAGE_KEY); return v ? JSON.parse(v) : null; } catch { return null; } },
       set: (val) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(val)); } catch {} },
     };
 
+    // ── Level-up quotes ───────────────────────────────────────────────────────
+    const LEVEL_QUOTES = [
+      { lvl:2,  quote:"The first step into darkness is the hardest. You have taken it.", author:"— The Void" },
+      { lvl:3,  quote:"Power is not given. It is earned, in the quiet moments no one else sees.", author:"— Grimoire, Vol. I" },
+      { lvl:4,  quote:"She who survives the storm does not fear the rain.", author:"— Ancient Proverb" },
+      { lvl:5,  quote:"Magic is just discipline that forgot it was supposed to be impossible.", author:"— Unknown Sorcerer" },
+      { lvl:6,  quote:"The arcane does not reward the worthy. It rewards the persistent.", author:"— Grimoire, Vol. II" },
+      { lvl:7,  quote:"Even the void has a shape, if you are brave enough to trace its edges.", author:"— The Void" },
+      { lvl:8,  quote:"You are not who you were. You are who you chose to become.", author:"— Mirror Inscription, Tower of Echoes" },
+      { lvl:9,  quote:"Rest is not surrender. It is how the flame learns to burn longer.", author:"— Grimoire, Vol. III" },
+      { lvl:10, quote:"The greatest spell you will ever cast is the one you cast on yourself.", author:"— Alyx" },
+    ];
+
     // ── Constants ─────────────────────────────────────────────────────────────
     const LEVEL_XP   = [0,100,250,450,700,1000,1400,1900,2500,3200,4000];
     const DIFF_COLOR = { easy:"#4ade80", medium:"#facc15", hard:"#f87171" };
     const DIFF_LABEL = { easy:"Cantrip",  medium:"Ritual",  hard:"Arcane Surge" };
+    const DAYS       = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const DAYS_FULL  = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
     const DEFAULT_QUESTS = [
-      { id:1,  title:"Wash the dishes",                cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Aqua Cleanse",        streak:0 },
-      { id:2,  title:"Wipe counters & stovetop",        cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Purify Surface",       streak:0 },
-      { id:3,  title:"Deep-clean the kitchen",          cat:"home", diff:"hard",   xp:60, pts:25, spell:"Sanctify the Hearth",  streak:0 },
-      { id:4,  title:"Clear one surface (5 min)",       cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Banish Clutter",       streak:0 },
-      { id:5,  title:"Tidy one full room",              cat:"home", diff:"hard",   xp:60, pts:25, spell:"Chaos to Order",       streak:0 },
-      { id:6,  title:"Throw away 10 items",             cat:"home", diff:"medium", xp:25, pts:12, spell:"Void Disposal",        streak:0 },
-      { id:7,  title:"Put away 3 misplaced things",     cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Restoration Rite",     streak:0 },
-      { id:8,  title:"Research 3 target companies",     cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Scholar's Eye",        streak:0 },
-      { id:9,  title:"Find 5 job postings",             cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Seeker's Compass",     streak:0 },
-      { id:10, title:"Submit one application",          cat:"work", diff:"medium", xp:40, pts:12, spell:"Fate's Missive",       streak:0 },
-      { id:11, title:"Submit three applications",       cat:"work", diff:"hard",   xp:90, pts:25, spell:"Storm of Scrolls",     streak:0 },
-      { id:12, title:"Tailor resume for one role",      cat:"work", diff:"medium", xp:35, pts:12, spell:"Shape-Shift Grimoire", streak:0 },
-      { id:13, title:"Write one cover letter",          cat:"work", diff:"hard",   xp:55, pts:25, spell:"Words of Power",       streak:0 },
-      { id:14, title:"Proofread & polish a doc",        cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Clarity Rune",         streak:0 },
-      { id:15, title:"Send one LinkedIn message",       cat:"work", diff:"easy",   xp:25, pts:5,  spell:"Arcane Whisper",       streak:0 },
-      { id:16, title:"Reach out to 3 contacts",         cat:"work", diff:"medium", xp:45, pts:12, spell:"Web of Threads",       streak:0 },
-      { id:17, title:"Follow up on a past application", cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Echo Pulse",           streak:0 },
+      { id:1,  title:"Wash the dishes",                cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Aqua Cleanse",        streak:0, custom:false },
+      { id:2,  title:"Wipe counters & stovetop",        cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Purify Surface",       streak:0, custom:false },
+      { id:3,  title:"Deep-clean the kitchen",          cat:"home", diff:"hard",   xp:60, pts:25, spell:"Sanctify the Hearth",  streak:0, custom:false },
+      { id:4,  title:"Clear one surface (5 min)",       cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Banish Clutter",       streak:0, custom:false },
+      { id:5,  title:"Tidy one full room",              cat:"home", diff:"hard",   xp:60, pts:25, spell:"Chaos to Order",       streak:0, custom:false },
+      { id:6,  title:"Throw away 10 items",             cat:"home", diff:"medium", xp:25, pts:12, spell:"Void Disposal",        streak:0, custom:false },
+      { id:7,  title:"Put away 3 misplaced things",     cat:"home", diff:"easy",   xp:15, pts:5,  spell:"Restoration Rite",     streak:0, custom:false },
+      { id:8,  title:"Research 3 target companies",     cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Scholar's Eye",        streak:0, custom:false },
+      { id:9,  title:"Find 5 job postings",             cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Seeker's Compass",     streak:0, custom:false },
+      { id:10, title:"Submit one application",          cat:"work", diff:"medium", xp:40, pts:12, spell:"Fate's Missive",       streak:0, custom:false },
+      { id:11, title:"Submit three applications",       cat:"work", diff:"hard",   xp:90, pts:25, spell:"Storm of Scrolls",     streak:0, custom:false },
+      { id:12, title:"Tailor resume for one role",      cat:"work", diff:"medium", xp:35, pts:12, spell:"Shape-Shift Grimoire", streak:0, custom:false },
+      { id:13, title:"Write one cover letter",          cat:"work", diff:"hard",   xp:55, pts:25, spell:"Words of Power",       streak:0, custom:false },
+      { id:14, title:"Proofread & polish a doc",        cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Clarity Rune",         streak:0, custom:false },
+      { id:15, title:"Send one LinkedIn message",       cat:"work", diff:"easy",   xp:25, pts:5,  spell:"Arcane Whisper",       streak:0, custom:false },
+      { id:16, title:"Reach out to 3 contacts",         cat:"work", diff:"medium", xp:45, pts:12, spell:"Web of Threads",       streak:0, custom:false },
+      { id:17, title:"Follow up on a past application", cat:"work", diff:"easy",   xp:20, pts:5,  spell:"Echo Pulse",           streak:0, custom:false },
     ];
 
     const DEFAULT_REWARDS = [
@@ -118,37 +147,46 @@
       { id:"r9", title:"+$1 toward new tattoo",      cost:10, icon:"🩸", cat:"tattoo", tattooValue:1 },
     ];
 
+    // planner: { "YYYY-MM-DD": [ { id, title, done, xp, pts } ] }
     const INIT = {
       character: { name:"Alyx", cls:"Void Sorcerer", xp:0, pts:0, streakDays:0, streakFreezes:2, lastDate:null },
       quests: DEFAULT_QUESTS,
-      completedToday: [],
+      completions: {}, // { questId: count_today } — NEW: tracks per-day completions
       rewards: DEFAULT_REWARDS,
       rewardLog: [],
       log: [],
       tattooBudget: 0,
+      planner: {},     // { "YYYY-MM-DD": [{id,title,done,xp,pts,diff}] }
     };
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    const todayStr = () => new Date().toISOString().split("T")[0];
-    const getLevel = xp => { for(let i=LEVEL_XP.length-1;i>=0;i--) if(xp>=LEVEL_XP[i]) return i+1; return 1; };
-    const xpFloor  = lvl => LEVEL_XP[Math.min(lvl-1, LEVEL_XP.length-1)];
-    const xpCeil   = lvl => LEVEL_XP[Math.min(lvl,   LEVEL_XP.length-1)];
+    const todayStr  = () => new Date().toISOString().split("T")[0];
+    const getLevel  = xp => { for(let i=LEVEL_XP.length-1;i>=0;i--) if(xp>=LEVEL_XP[i]) return i+1; return 1; };
+    const xpFloor   = lvl => LEVEL_XP[Math.min(lvl-1, LEVEL_XP.length-1)];
+    const xpCeil    = lvl => LEVEL_XP[Math.min(lvl,   LEVEL_XP.length-1)];
+    const getQuoteForLevel = lvl => LEVEL_QUOTES.find(q=>q.lvl===lvl) || { quote:"The void acknowledges your growth.", author:"— The Void" };
+    const getWeekStart = (date) => {
+      const d = new Date(date);
+      d.setDate(d.getDate() - d.getDay());
+      return d;
+    };
+    const formatDate = (dateStr) => {
+      const [y,m,d] = dateStr.split("-").map(Number);
+      return new Date(y,m-1,d);
+    };
+    const addDays = (dateStr, n) => {
+      const d = formatDate(dateStr);
+      d.setDate(d.getDate()+n);
+      return d.toISOString().split("T")[0];
+    };
+    const nextId = (quests) => Math.max(0,...quests.map(q=>q.id)) + 1;
 
     // ── Particles ─────────────────────────────────────────────────────────────
     function Particles() {
-      const ps = React.useMemo(() =>
-        Array.from({length:16},(_,i)=>({
-          id:i,
-          left:`${5+Math.random()*90}%`,
-          delay:`${Math.random()*10}s`,
-          dur:`${7+Math.random()*9}s`,
-          sz: Math.random()>0.5 ? 3 : 2
-        })), []);
+      const ps = useMemo(()=>Array.from({length:14},(_,i)=>({ id:i, left:`${5+Math.random()*90}%`, delay:`${Math.random()*10}s`, dur:`${7+Math.random()*9}s`, sz:Math.random()>0.5?3:2 })),[]);
       return (
         <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}>
-          {ps.map(p=>(
-            <div key={p.id} style={{position:"absolute",left:p.left,bottom:"-8px",width:p.sz,height:p.sz,borderRadius:"50%",background:"rgba(167,139,250,0.5)",boxShadow:"0 0 6px rgba(167,139,250,0.8)",animation:`floatUp ${p.dur} ${p.delay} infinite linear`}}/>
-          ))}
+          {ps.map(p=><div key={p.id} style={{position:"absolute",left:p.left,bottom:"-8px",width:p.sz,height:p.sz,borderRadius:"50%",background:"rgba(167,139,250,0.5)",boxShadow:"0 0 6px rgba(167,139,250,0.8)",animation:`floatUp ${p.dur} ${p.delay} infinite linear`}}/>)}
         </div>
       );
     }
@@ -178,24 +216,244 @@
       );
     }
 
+    // ── Level-up overlay with quote ───────────────────────────────────────────
+    function LevelUpOverlay({level, onDismiss}) {
+      const q = getQuoteForLevel(level);
+      return (
+        <div onClick={onDismiss} style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(ellipse at center,rgba(139,92,246,.45) 0%,rgba(8,6,17,.85) 70%)",cursor:"pointer",animation:"fadeIn .4s ease"}}>
+          <div style={{textAlign:"center",maxWidth:400,padding:"0 24px",animation:"lvlPop .5s ease"}}>
+            <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:38,color:"#c4b5fd",textShadow:"0 0 50px rgba(196,181,253,1),0 0 100px rgba(139,92,246,.8)",letterSpacing:4,marginBottom:8}}>LEVEL {level}</div>
+            <div style={{fontSize:13,color:"#7c3aed",letterSpacing:3,textTransform:"uppercase",marginBottom:28}}>Alyx grows more powerful</div>
+            <div style={{background:"rgba(20,8,44,.8)",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"20px 24px"}}>
+              <div style={{fontSize:17,color:"#e2d9f3",fontStyle:"italic",lineHeight:1.7,marginBottom:10}}>"{q.quote}"</div>
+              <div style={{fontSize:12,color:"#6d28d9",letterSpacing:2}}>{q.author}</div>
+            </div>
+            <div style={{marginTop:18,fontSize:12,color:"#3b0764",letterSpacing:2}}>TAP TO CONTINUE</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Custom Task Form ──────────────────────────────────────────────────────
+    function CustomTaskForm({onAdd, onCancel}) {
+      const [title, setTitle] = useState("");
+      const [diff,  setDiff]  = useState("easy");
+      const [cat,   setCat]   = useState("home");
+      const [spell, setSpell] = useState("");
+
+      const xpMap  = {easy:15, medium:30, hard:60};
+      const ptsMap = {easy:5,  medium:12, hard:25};
+
+      const handle = () => {
+        if(!title.trim()) return;
+        onAdd({ title:title.trim(), diff, cat, spell:spell.trim()||"Custom Rite", xp:xpMap[diff], pts:ptsMap[diff] });
+      };
+
+      return (
+        <div style={{background:"linear-gradient(135deg,rgba(28,8,58,.98),rgba(12,4,30,.99))",border:"1px solid rgba(139,92,246,.4)",borderRadius:14,padding:"20px",marginBottom:16,animation:"fadeIn .3s ease"}}>
+          <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:13,color:"#c4b5fd",letterSpacing:2,marginBottom:14}}>NEW CUSTOM SPELL</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <input placeholder="Task name (e.g. Take medication)" value={title} onChange={e=>setTitle(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handle()}/>
+            <input placeholder="Spell name (optional, e.g. Binding Ritual)" value={spell} onChange={e=>setSpell(e.target.value)}/>
+            <div style={{display:"flex",gap:8}}>
+              <select value={diff} onChange={e=>setDiff(e.target.value)} style={{flex:1}}>
+                <option value="easy">Cantrip (easy)</option>
+                <option value="medium">Ritual (medium)</option>
+                <option value="hard">Arcane Surge (hard)</option>
+              </select>
+              <select value={cat} onChange={e=>setCat(e.target.value)} style={{flex:1}}>
+                <option value="home">🏚 Home</option>
+                <option value="work">📜 Work</option>
+                <option value="personal">✦ Personal</option>
+              </select>
+            </div>
+            <div style={{fontSize:12,color:"#5b21b6"}}>Rewards: +{xpMap[diff]} XP · +{ptsMap[diff]} pts</div>
+            <div style={{display:"flex",gap:8,marginTop:4}}>
+              <button onClick={handle} style={{flex:1,padding:"9px",borderRadius:8,border:"1px solid #7c3aed",background:"rgba(109,40,217,.35)",color:"#c4b5fd",fontFamily:"'Crimson Pro',serif",fontSize:14,cursor:"pointer"}}>✦ Add Spell</button>
+              <button onClick={onCancel} style={{padding:"9px 16px",borderRadius:8,border:"1px solid #3b0764",background:"transparent",color:"#6d28d9",fontFamily:"'Crimson Pro',serif",fontSize:14,cursor:"pointer"}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Weekly Planner ────────────────────────────────────────────────────────
+    function WeeklyPlanner({planner, quests, onUpdate}) {
+      const today = todayStr();
+      const weekStart = useMemo(()=>{
+        const d = new Date(today+"T00:00:00");
+        d.setDate(d.getDate()-d.getDay());
+        return d.toISOString().split("T")[0];
+      },[today]);
+
+      const weekDays = useMemo(()=>Array.from({length:7},(_,i)=>addDays(weekStart,i)),[weekStart]);
+      const [selectedDay, setSelectedDay] = useState(today);
+      const [addingTask,  setAddingTask]  = useState(false);
+      const [newTaskTitle, setNewTaskTitle] = useState("");
+      const [newTaskDiff,  setNewTaskDiff]  = useState("easy");
+      const [pickQuest, setPickQuest] = useState(false);
+
+      const xpMap  = {easy:15, medium:30, hard:60};
+      const ptsMap = {easy:5,  medium:12, hard:25};
+
+      const dayPlan = planner[selectedDay] || [];
+
+      const addPlanTask = () => {
+        if(!newTaskTitle.trim()) return;
+        const task = { id:Date.now(), title:newTaskTitle.trim(), diff:newTaskDiff, xp:xpMap[newTaskDiff], pts:ptsMap[newTaskDiff], done:false };
+        const updated = { ...planner, [selectedDay]: [...(planner[selectedDay]||[]), task] };
+        onUpdate(updated);
+        setNewTaskTitle(""); setAddingTask(false);
+      };
+
+      const addQuestToDay = (q) => {
+        const task = { id:Date.now(), title:q.title, diff:q.diff, xp:q.xp, pts:q.pts, done:false, spell:q.spell };
+        const updated = { ...planner, [selectedDay]: [...(planner[selectedDay]||[]), task] };
+        onUpdate(updated);
+        setPickQuest(false);
+      };
+
+      const toggleDone = (taskId) => {
+        const updated = { ...planner, [selectedDay]: (planner[selectedDay]||[]).map(t=>t.id===taskId?{...t,done:!t.done}:t) };
+        onUpdate(updated);
+      };
+
+      const removeTask = (taskId) => {
+        const updated = { ...planner, [selectedDay]: (planner[selectedDay]||[]).filter(t=>t.id!==taskId) };
+        onUpdate(updated);
+      };
+
+      const isToday = d => d === today;
+      const isPast  = d => d < today;
+
+      const formatDayLabel = (dateStr) => {
+        const [y,m,d] = dateStr.split("-").map(Number);
+        return new Date(y,m-1,d);
+      };
+
+      return (
+        <div>
+          {/* Week strip */}
+          <div style={{display:"flex",gap:4,marginBottom:16,overflowX:"auto",paddingBottom:4}}>
+            {weekDays.map(day=>{
+              const d = formatDayLabel(day);
+              const tasks = planner[day]||[];
+              const doneCount = tasks.filter(t=>t.done).length;
+              const sel = day===selectedDay;
+              const tod = isToday(day);
+              const past = isPast(day);
+              return (
+                <div key={day} onClick={()=>setSelectedDay(day)} style={{flex:"0 0 auto",width:46,textAlign:"center",cursor:"pointer",borderRadius:10,padding:"8px 4px",background:sel?"rgba(109,40,217,.4)":"rgba(20,8,44,.6)",border:`1px solid ${sel?"rgba(139,92,246,.7)":tod?"rgba(139,92,246,.3)":"rgba(109,40,217,.15)"}`,transition:"all .2s",opacity:past&&!sel?.7:1}}>
+                  <div style={{fontSize:10,color:sel?"#c4b5fd":tod?"#a78bfa":"#4c1d95",letterSpacing:1,textTransform:"uppercase"}}>{DAYS[d.getDay()]}</div>
+                  <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:15,color:sel?"#e2d9f3":tod?"#c4b5fd":"#6d28d9",marginTop:2}}>{d.getDate()}</div>
+                  {tasks.length>0&&<div style={{marginTop:4,fontSize:10,color:doneCount===tasks.length?"#86efac":"#fcd34d"}}>{doneCount}/{tasks.length}</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Selected day header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div>
+              <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:14,color:"#c4b5fd",letterSpacing:1}}>
+                {DAYS_FULL[formatDayLabel(selectedDay).getDay()]}
+              </div>
+              <div style={{fontSize:12,color:"#5b21b6",letterSpacing:1}}>{selectedDay}{isToday(selectedDay)&&<span style={{color:"#a78bfa"}}> · Today</span>}</div>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>{setPickQuest(p=>!p);setAddingTask(false);}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid rgba(139,92,246,.4)",background:"rgba(109,40,217,.2)",color:"#a78bfa",fontSize:12,fontFamily:"'Crimson Pro',serif",cursor:"pointer"}}>
+                + From Spells
+              </button>
+              <button onClick={()=>{setAddingTask(p=>!p);setPickQuest(false);}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid rgba(139,92,246,.5)",background:"rgba(109,40,217,.3)",color:"#c4b5fd",fontSize:12,fontFamily:"'Crimson Pro',serif",cursor:"pointer"}}>
+                + Custom
+              </button>
+            </div>
+          </div>
+
+          {/* Pick from spell book */}
+          {pickQuest&&(
+            <div style={{background:"rgba(20,8,44,.9)",border:"1px solid rgba(109,40,217,.3)",borderRadius:12,padding:"12px",marginBottom:12,maxHeight:260,overflowY:"auto",animation:"fadeIn .2s ease"}}>
+              <div style={{fontSize:11,color:"#5b21b6",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Choose a spell to schedule</div>
+              {quests.map(q=>(
+                <div key={q.id} onClick={()=>addQuestToDay(q)} style={{padding:"8px 10px",borderRadius:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,background:"rgba(30,10,60,.5)",border:"1px solid rgba(109,40,217,.15)"}} className="qcard">
+                  <span style={{fontSize:14,color:"#c4b5fd"}}>{q.title}</span>
+                  <span style={{fontSize:11,color:DIFF_COLOR[q.diff],letterSpacing:1,textTransform:"uppercase"}}>{DIFF_LABEL[q.diff]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add custom planner task */}
+          {addingTask&&(
+            <div style={{background:"rgba(20,8,44,.9)",border:"1px solid rgba(109,40,217,.3)",borderRadius:12,padding:"14px",marginBottom:12,animation:"fadeIn .2s ease"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <input placeholder="Task name" value={newTaskTitle} onChange={e=>setNewTaskTitle(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPlanTask()} autoFocus/>
+                <select value={newTaskDiff} onChange={e=>setNewTaskDiff(e.target.value)}>
+                  <option value="easy">Cantrip (easy) — +15 XP</option>
+                  <option value="medium">Ritual (medium) — +30 XP</option>
+                  <option value="hard">Arcane Surge (hard) — +60 XP</option>
+                </select>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={addPlanTask} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid #7c3aed",background:"rgba(109,40,217,.3)",color:"#c4b5fd",fontFamily:"'Crimson Pro',serif",fontSize:13,cursor:"pointer"}}>Add</button>
+                  <button onClick={()=>setAddingTask(false)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #3b0764",background:"transparent",color:"#6d28d9",fontFamily:"'Crimson Pro',serif",fontSize:13,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Day tasks */}
+          {dayPlan.length===0?(
+            <div style={{textAlign:"center",padding:"32px 0",color:"#3b0764",fontSize:13,letterSpacing:2,textTransform:"uppercase"}}>No tasks planned.<br/>Add something above.</div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {dayPlan.map(task=>(
+                <div key={task.id} style={{background:task.done?"linear-gradient(135deg,rgba(18,8,38,.7),rgba(10,4,24,.8))":"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:`1px solid ${task.done?"rgba(109,40,217,.1)":"rgba(109,40,217,.28)"}`,borderLeft:`3px solid ${task.done?"#3b0764":DIFF_COLOR[task.diff||"easy"]}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,opacity:task.done?.55:1,transition:"all .3s"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:15,color:task.done?"#4c1d95":"#e2d9f3",textDecoration:task.done?"line-through":"none"}}>{task.title}</div>
+                    {task.spell&&<div style={{fontSize:11,color:"#7c3aed",fontStyle:"italic",marginTop:2}}>{task.spell}</div>}
+                    <div style={{fontSize:11,color:"#5b21b6",marginTop:2}}>+{task.xp} XP · +{task.pts} pts</div>
+                  </div>
+                  <button onClick={()=>toggleDone(task.id)} style={{width:32,height:32,borderRadius:"50%",border:`2px solid ${task.done?"#3b0764":DIFF_COLOR[task.diff||"easy"]}`,background:task.done?"rgba(59,7,100,.25)":"transparent",color:task.done?"#3b0764":DIFF_COLOR[task.diff||"easy"],fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                    {task.done?"✓":"◈"}
+                  </button>
+                  <button onClick={()=>removeTask(task.id)} style={{width:28,height:28,borderRadius:"50%",border:"1px solid #3b0764",background:"transparent",color:"#4c1d95",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // ── Main App ──────────────────────────────────────────────────────────────
     function AlyxGrimoire() {
-      const [state,      setState]      = useState(null);
-      const [tab,        setTab]        = useState("quests");
-      const [diff,       setDiff]       = useState("all");
-      const [cat,        setCat]        = useState("all");
-      const [popups,     setPopups]     = useState([]);
-      const [levelUp,    setLevelUp]    = useState(false);
-      const [loading,    setLoading]    = useState(true);
-      const [redeemAnim, setRedeemAnim] = useState(null);
-      const [tattooSpend,setTattooSpend]= useState("");
+      const [state,       setState]      = useState(null);
+      const [tab,         setTab]        = useState("quests");
+      const [diffFilter,  setDiffFilter] = useState("all");
+      const [catFilter,   setCatFilter]  = useState("all");
+      const [popups,      setPopups]     = useState([]);
+      const [levelUpData, setLevelUpData]= useState(null); // {level}
+      const [loading,     setLoading]    = useState(true);
+      const [redeemAnim,  setRedeemAnim] = useState(null);
+      const [tattooSpend, setTattooSpend]= useState("");
+      const [showAddTask, setShowAddTask]= useState(false);
 
       // Load
       useEffect(()=>{
         const saved = store.get();
         if(saved) {
+          // migrate old saves
           if(saved.tattooBudget===undefined) saved.tattooBudget=0;
           if(!saved.rewards.find(x=>x.id==="r9")) saved.rewards.push({ id:"r9", title:"+$1 toward new tattoo", cost:10, icon:"🩸", cat:"tattoo", tattooValue:1 });
+          if(!saved.completions) saved.completions={};
+          if(!saved.planner) saved.planner={};
+          // migrate old completedToday array to completions map
+          if(saved.completedToday && !saved.completions[todayStr()]) {
+            const map = {};
+            (saved.completedToday||[]).forEach(id=>{ map[id]=(map[id]||0)+1; });
+            saved.completions = { [todayStr()]: map };
+            delete saved.completedToday;
+          }
           setState(saved);
         } else {
           setState(INIT);
@@ -203,7 +461,6 @@
         setLoading(false);
       },[]);
 
-      // Save on every change
       useEffect(()=>{ if(state) store.set(state); },[state]);
 
       // Streak check
@@ -213,7 +470,7 @@
         if(!last) return;
         const d=Math.floor((new Date(today)-new Date(last))/86400000);
         if(d<=1) return;
-        if(d===2 && state.character.streakFreezes>0) {
+        if(d===2&&state.character.streakFreezes>0) {
           setState(p=>({...p,character:{...p.character,streakFreezes:p.character.streakFreezes-1,lastDate:today}}));
         } else if(d>=2) {
           setState(p=>({...p,character:{...p.character,streakDays:0}}));
@@ -229,12 +486,14 @@
 
       const completeQuest = useCallback(qid=>{
         setState(prev=>{
-          if(!prev||prev.completedToday.includes(qid)) return prev;
+          if(!prev) return prev;
           const q=prev.quests.find(x=>x.id===qid); if(!q) return prev;
+          const today=todayStr();
+          const todayCompletions = prev.completions[today]||{};
           const newXP=prev.character.xp+q.xp, newPts=prev.character.pts+q.pts;
           const oldLvl=getLevel(prev.character.xp), newLvl=getLevel(newXP);
-          if(newLvl>oldLvl) setTimeout(()=>{setLevelUp(true);setTimeout(()=>setLevelUp(false),2800);},80);
-          const today=todayStr(), last=prev.character.lastDate;
+          if(newLvl>oldLvl) setTimeout(()=>setLevelUpData({level:newLvl}),80);
+          const last=prev.character.lastDate;
           const d=last?Math.floor((new Date(today)-new Date(last))/86400000):999;
           const newStreak=d===0?prev.character.streakDays:(d===1?prev.character.streakDays+1:1);
           spawnPopup(q.xp,q.pts,q.spell);
@@ -242,11 +501,28 @@
             ...prev,
             character:{...prev.character,xp:newXP,pts:newPts,streakDays:newStreak,lastDate:today},
             quests:prev.quests.map(x=>x.id===qid?{...x,streak:x.streak+1}:x),
-            completedToday:[...prev.completedToday,qid],
-            log:[{id:Date.now(),spell:q.spell,title:q.title,xp:q.xp,pts:q.pts,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})},...prev.log.slice(0,29)],
+            completions:{ ...prev.completions, [today]:{ ...todayCompletions, [qid]:(todayCompletions[qid]||0)+1 } },
+            log:[{id:Date.now(),spell:q.spell,title:q.title,xp:q.xp,pts:q.pts,time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})},...prev.log.slice(0,49)],
           };
         });
       },[spawnPopup]);
+
+      const addCustomQuest = useCallback(({title,diff,cat,spell,xp,pts})=>{
+        setState(prev=>{
+          if(!prev) return prev;
+          const id = nextId(prev.quests);
+          const newQ = {id,title,cat,diff,xp,pts,spell,streak:0,custom:true};
+          return {...prev, quests:[...prev.quests,newQ]};
+        });
+        setShowAddTask(false);
+      },[]);
+
+      const deleteCustomQuest = useCallback(qid=>{
+        setState(prev=>{
+          if(!prev) return prev;
+          return {...prev, quests:prev.quests.filter(q=>q.id!==qid||!q.custom)};
+        });
+      },[]);
 
       const redeemReward = useCallback(reward=>{
         setState(prev=>{
@@ -263,8 +539,6 @@
         });
       },[]);
 
-      const resetDay = ()=>setState(p=>p?{...p,completedToday:[]}:p);
-
       const spendTattooBudget = useCallback(amount=>{
         setState(prev=>{
           if(!prev) return prev;
@@ -274,13 +548,17 @@
         });
       },[]);
 
+      const updatePlanner = useCallback(newPlanner=>{
+        setState(prev=>prev?{...prev,planner:newPlanner}:prev);
+      },[]);
+
       const exportBackup = useCallback(()=>{
         if(!state) return;
         const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
         const url=URL.createObjectURL(blob);
         const a=document.createElement("a");
         a.href=url;
-        a.download=`alyx-grimoire-backup-${new Date().toISOString().split("T")[0]}.json`;
+        a.download=`alyx-grimoire-backup-${todayStr()}.json`;
         a.click();
         URL.revokeObjectURL(url);
       },[state]);
@@ -292,12 +570,11 @@
           try {
             const parsed=JSON.parse(evt.target.result);
             if(!parsed.character||!parsed.quests){alert("Invalid backup file.");return;}
-            setState(parsed);
+            store.set(parsed); setState(parsed);
             alert("✦ Grimoire restored successfully!");
           } catch { alert("Could not read backup file."); }
         };
-        reader.readAsText(file);
-        e.target.value="";
+        reader.readAsText(file); e.target.value="";
       },[]);
 
       if(loading||!state) return (
@@ -309,8 +586,11 @@
         </div>
       );
 
-      const {character,quests,completedToday,rewards,rewardLog,log,tattooBudget}=state;
-      const filtered=quests.filter(q=>(diff==="all"||q.diff===diff)&&(cat==="all"||q.cat===cat));
+      const {character,quests,completions,rewards,rewardLog,log,tattooBudget,planner}=state;
+      const today=todayStr();
+      const todayMap=completions[today]||{};
+      const totalCastsToday=Object.values(todayMap).reduce((a,b)=>a+b,0);
+      const filtered=quests.filter(q=>(diffFilter==="all"||q.diff===diffFilter)&&(catFilter==="all"||q.cat===catFilter));
       const canAfford=r=>character.pts>=r.cost;
       const lvl=getLevel(character.xp);
 
@@ -318,17 +598,9 @@
         <div style={{minHeight:"100vh",background:"#080611",fontFamily:"'Crimson Pro',Georgia,serif",color:"#e2d9f3",position:"relative",overflow:"hidden"}}>
           <Particles/>
 
-          {/* Level-up overlay */}
-          {levelUp&&(
-            <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(ellipse at center,rgba(139,92,246,.4) 0%,transparent 70%)",pointerEvents:"none"}}>
-              <div style={{textAlign:"center",animation:"lvlPop 2.8s ease forwards"}}>
-                <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:40,color:"#c4b5fd",textShadow:"0 0 50px rgba(196,181,253,1),0 0 100px rgba(139,92,246,.8)",letterSpacing:4}}>LEVEL UP</div>
-                <div style={{fontSize:18,color:"#a78bfa",marginTop:8,letterSpacing:2}}>Alyx grows more powerful</div>
-              </div>
-            </div>
-          )}
+          {levelUpData&&<LevelUpOverlay level={levelUpData.level} onDismiss={()=>setLevelUpData(null)}/>}
 
-          {/* XP/pts popups */}
+          {/* Popups */}
           <div style={{position:"fixed",top:90,right:16,zIndex:150,pointerEvents:"none"}}>
             {popups.map(p=>(
               <div key={p.id} style={{animation:"rise 1.6s ease forwards",marginBottom:6,textAlign:"right"}}>
@@ -339,7 +611,7 @@
             ))}
           </div>
 
-          <div style={{maxWidth:760,margin:"0 auto",padding:"env(safe-area-inset-top, 16px) 14px 32px",position:"relative",zIndex:1,paddingTop:"max(env(safe-area-inset-top), 16px)"}}>
+          <div style={{maxWidth:760,margin:"0 auto",padding:"max(env(safe-area-inset-top),16px) 14px 40px",position:"relative",zIndex:1}}>
 
             {/* Character card */}
             <div style={{background:"linear-gradient(135deg,rgba(28,8,58,.97),rgba(12,4,30,.99))",border:"1px solid rgba(139,92,246,.38)",borderRadius:16,padding:"22px 20px 18px",marginBottom:16,animation:"glow 4s ease-in-out infinite",position:"relative",overflow:"hidden"}}>
@@ -350,50 +622,62 @@
                   <div style={{fontSize:12,color:"#7c3aed",letterSpacing:3,textTransform:"uppercase",marginTop:3,fontWeight:300}}>{character.cls} · Level {lvl}</div>
                 </div>
                 <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-                  <StatPill icon="✨" value={character.xp}          label="Total XP" color="#a78bfa"/>
-                  <StatPill icon="🪙" value={character.pts}         label="Points"   color="#fcd34d"/>
-                  <StatPill icon="🔥" value={character.streakDays}  label="Streak"   color="#fb923c"/>
-                  <StatPill icon="❄️" value={character.streakFreezes} label="Freezes" color="#67e8f9"/>
+                  <StatPill icon="✨" value={character.xp}            label="Total XP" color="#a78bfa"/>
+                  <StatPill icon="🪙" value={character.pts}           label="Points"   color="#fcd34d"/>
+                  <StatPill icon="🔥" value={character.streakDays}    label="Streak"   color="#fb923c"/>
+                  <StatPill icon="❄️" value={character.streakFreezes} label="Freezes"  color="#67e8f9"/>
                 </div>
               </div>
               <div style={{marginTop:16}}><XpBar xp={character.xp}/></div>
-              <div style={{marginTop:10,fontSize:13,color:"#5b21b6",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <span>⚔️ {completedToday.length} {completedToday.length===1?"spell":"spells"} cast today</span>
-                {completedToday.length>0&&<button onClick={resetDay} style={{fontSize:11,color:"#4c1d95",background:"none",border:"1px solid #3b0764",borderRadius:4,padding:"2px 8px",cursor:"pointer",letterSpacing:1}}>Reset Day</button>}
-              </div>
+              <div style={{marginTop:10,fontSize:13,color:"#5b21b6"}}>⚔️ {totalCastsToday} {totalCastsToday===1?"spell":"spells"} cast today</div>
             </div>
 
             {/* Tabs */}
-            <div style={{display:"flex",gap:0,marginBottom:14,borderBottom:"1px solid rgba(109,40,217,.2)",overflowX:"auto"}}>
-              {[["quests","📜 Spells"],["rewards","🪙 Shop"],["log","📖 Log"],["backup","🔒 Backup"]].map(([t,label])=>(
-                <button key={t} className="tab" onClick={()=>setTab(t)} style={{padding:"9px 14px",fontFamily:"'Crimson Pro',serif",fontSize:14,letterSpacing:.5,color:tab===t?"#c4b5fd":"#6d28d9",borderBottom:`2px solid ${tab===t?"#7c3aed":"transparent"}`,marginBottom:-1,background:"none",border:"none",borderBottom:`2px solid ${tab===t?"#7c3aed":"transparent"}`,paddingBottom:10,cursor:"pointer",whiteSpace:"nowrap"}}>
+            <div style={{display:"flex",marginBottom:14,borderBottom:"1px solid rgba(109,40,217,.2)",overflowX:"auto"}}>
+              {[["quests","📜 Spells"],["planner","🗓 Planner"],["rewards","🪙 Shop"],["log","📖 Log"],["backup","🔒 Backup"]].map(([t,label])=>(
+                <button key={t} className="tab" onClick={()=>setTab(t)} style={{padding:"9px 13px",fontFamily:"'Crimson Pro',serif",fontSize:14,letterSpacing:.5,color:tab===t?"#c4b5fd":"#6d28d9",background:"none",border:"none",borderBottom:`2px solid ${tab===t?"#7c3aed":"transparent"}`,marginBottom:-1,paddingBottom:10,cursor:"pointer",whiteSpace:"nowrap"}}>
                   {label}
                 </button>
               ))}
             </div>
 
-            {/* QUESTS */}
+            {/* QUESTS TAB */}
             {tab==="quests"&&(
               <>
+                {/* Filters */}
                 <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}>
                   {[["all","All"],["easy","Cantrips"],["medium","Rituals"],["hard","Surge"]].map(([v,l])=>(
-                    <button key={v} className="filtbtn" onClick={()=>setDiff(v)} style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${diff===v?"#7c3aed":"#2e1065"}`,background:diff===v?"rgba(109,40,217,.28)":"transparent",color:diff===v?"#c4b5fd":"#6d28d9",fontSize:12,fontFamily:"'Crimson Pro',serif"}}>{l}</button>
+                    <button key={v} className="filtbtn" onClick={()=>setDiffFilter(v)} style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${diffFilter===v?"#7c3aed":"#2e1065"}`,background:diffFilter===v?"rgba(109,40,217,.28)":"transparent",color:diffFilter===v?"#c4b5fd":"#6d28d9",fontSize:12,fontFamily:"'Crimson Pro',serif"}}>{l}</button>
                   ))}
                   <div style={{width:1,background:"#2e1065",margin:"0 2px"}}/>
-                  {[["all","All"],["home","🏚 Home"],["work","📜 Work"]].map(([v,l])=>(
-                    <button key={v} className="filtbtn" onClick={()=>setCat(v)} style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${cat===v?"#7c3aed":"#2e1065"}`,background:cat===v?"rgba(109,40,217,.28)":"transparent",color:cat===v?"#c4b5fd":"#6d28d9",fontSize:12,fontFamily:"'Crimson Pro',serif"}}>{l}</button>
+                  {[["all","All"],["home","🏚 Home"],["work","📜 Work"],["personal","✦ Personal"]].map(([v,l])=>(
+                    <button key={v} className="filtbtn" onClick={()=>setCatFilter(v)} style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${catFilter===v?"#7c3aed":"#2e1065"}`,background:catFilter===v?"rgba(109,40,217,.28)":"transparent",color:catFilter===v?"#c4b5fd":"#6d28d9",fontSize:12,fontFamily:"'Crimson Pro',serif"}}>{l}</button>
                   ))}
                 </div>
+
+                {/* Add custom task button */}
+                {!showAddTask&&(
+                  <button onClick={()=>setShowAddTask(true)} style={{width:"100%",padding:"10px",borderRadius:10,border:"1px dashed rgba(139,92,246,.35)",background:"transparent",color:"#5b21b6",fontFamily:"'Crimson Pro',serif",fontSize:14,cursor:"pointer",marginBottom:12,letterSpacing:.5,transition:"all .2s"}}>
+                    + Create Custom Spell
+                  </button>
+                )}
+                {showAddTask&&<CustomTaskForm onAdd={addCustomQuest} onCancel={()=>setShowAddTask(false)}/>}
+
+                {/* Quest list */}
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {filtered.map(q=>{
-                    const done=completedToday.includes(q.id), dc=DIFF_COLOR[q.diff];
+                    const count=todayMap[q.id]||0;
+                    const dc=DIFF_COLOR[q.diff];
+                    const doneOnce=count>0;
                     return (
-                      <div key={q.id} className="qcard" style={{background:done?"linear-gradient(135deg,rgba(18,8,38,.7),rgba(10,4,24,.8))":"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:`1px solid ${done?"rgba(109,40,217,.12)":"rgba(109,40,217,.28)"}`,borderLeft:`3px solid ${done?"#3b0764":dc}`,borderRadius:10,padding:"13px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,opacity:done?.48:1,transition:"all .3s"}}>
+                      <div key={q.id} className="qcard" style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:`1px solid rgba(109,40,217,.28)`,borderLeft:`3px solid ${dc}`,borderRadius:10,padding:"13px 14px",display:"flex",alignItems:"center",gap:10,transition:"all .3s"}}>
                         <div style={{flex:1}}>
                           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-                            <span style={{fontSize:12}}>{q.cat==="home"?"🏚️":"📜"}</span>
-                            <span style={{fontSize:15,color:done?"#4c1d95":"#e2d9f3",textDecoration:done?"line-through":"none"}}>{q.title}</span>
+                            <span style={{fontSize:12}}>{q.cat==="home"?"🏚️":q.cat==="personal"?"✦":"📜"}</span>
+                            <span style={{fontSize:15,color:"#e2d9f3"}}>{q.title}</span>
                             {q.streak>0&&<span style={{fontSize:11,color:"#fb923c",background:"rgba(251,146,60,.1)",padding:"1px 5px",borderRadius:8,border:"1px solid rgba(251,146,60,.2)"}}>🔥{q.streak}</span>}
+                            {doneOnce&&<span style={{fontSize:11,color:"#86efac",background:"rgba(134,239,172,.1)",padding:"1px 6px",borderRadius:8,border:"1px solid rgba(134,239,172,.2)"}}>×{count}</span>}
+                            {q.custom&&<span style={{fontSize:10,color:"#7c3aed",background:"rgba(109,40,217,.15)",padding:"1px 5px",borderRadius:6,border:"1px solid rgba(109,40,217,.25)"}}>custom</span>}
                           </div>
                           <div style={{marginTop:4,display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
                             <span style={{fontSize:11,color:dc,opacity:.85,letterSpacing:1,textTransform:"uppercase"}}>{DIFF_LABEL[q.diff]}</span>
@@ -404,9 +688,14 @@
                             <span style={{fontSize:11,color:"#fcd34d"}}>+{q.pts} pts</span>
                           </div>
                         </div>
-                        <button className="cbtn" onClick={()=>!done&&completeQuest(q.id)} disabled={done} style={{width:36,height:36,borderRadius:"50%",border:`2px solid ${done?"#3b0764":dc}`,background:done?"rgba(59,7,100,.25)":"transparent",color:done?"#3b0764":dc,fontSize:16,cursor:done?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:done?"none":`0 0 10px ${dc}44`,transition:"all .2s"}}>
-                          {done?"✓":"◈"}
-                        </button>
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          {q.custom&&(
+                            <button onClick={()=>deleteCustomQuest(q.id)} style={{width:26,height:26,borderRadius:"50%",border:"1px solid #3b0764",background:"transparent",color:"#4c1d95",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>×</button>
+                          )}
+                          <button className="cbtn" onClick={()=>completeQuest(q.id)} style={{width:36,height:36,borderRadius:"50%",border:`2px solid ${doneOnce?"rgba(134,239,172,.5)":dc}`,background:doneOnce?"rgba(134,239,172,.1)":"transparent",color:doneOnce?"#86efac":dc,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 0 10px ${dc}44`,transition:"all .2s"}}>
+                            {doneOnce?"✓":"◈"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -414,13 +703,17 @@
               </>
             )}
 
-            {/* REWARDS */}
+            {/* PLANNER TAB */}
+            {tab==="planner"&&(
+              <WeeklyPlanner planner={planner||{}} quests={quests} onUpdate={updatePlanner}/>
+            )}
+
+            {/* REWARDS TAB */}
             {tab==="rewards"&&(
               <div>
                 <div style={{marginBottom:14,fontSize:14,color:"#6d28d9",letterSpacing:1}}>
                   You have <span style={{color:"#fcd34d",fontFamily:"'Cinzel Decorative',serif",fontSize:16}}>{character.pts}</span> <span style={{color:"#a78bfa"}}>arcane points</span> to spend.
                 </div>
-
                 {/* Tattoo fund */}
                 <div style={{background:"linear-gradient(135deg,rgba(30,5,30,.97),rgba(15,3,20,.99))",border:"1px solid rgba(244,114,182,.35)",borderRadius:14,padding:"16px 18px",marginBottom:18,position:"relative",overflow:"hidden"}}>
                   <div style={{position:"absolute",top:-18,right:-10,fontSize:70,opacity:.06,color:"#f472b6",userSelect:"none"}}>🩸</div>
@@ -431,15 +724,13 @@
                   <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:32,color:"#f9a8d4",textShadow:"0 0 20px rgba(249,168,212,.5)",marginBottom:2}}>${(tattooBudget||0).toFixed(2)}</div>
                   <div style={{fontSize:12,color:"#9d174d",letterSpacing:1,marginBottom:12}}>saved toward your next tattoo</div>
                   <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                    <input type="number" min="0" step="1" placeholder="Amount spent ($)" value={tattooSpend} onChange={e=>setTattooSpend(e.target.value)}
-                      style={{background:"rgba(30,5,30,.8)",border:"1px solid rgba(244,114,182,.3)",borderRadius:8,padding:"7px 10px",color:"#f9a8d4",fontSize:14,fontFamily:"'Crimson Pro',serif",width:160,outline:"none"}}/>
+                    <input type="number" min="0" step="1" placeholder="Amount spent ($)" value={tattooSpend} onChange={e=>setTattooSpend(e.target.value)} style={{width:160}}/>
                     <button onClick={()=>{if(tattooSpend){spendTattooBudget(tattooSpend);setTattooSpend("");}}} disabled={!tattooSpend||parseFloat(tattooSpend)<=0}
-                      style={{padding:"7px 14px",borderRadius:8,border:"1px solid rgba(244,114,182,.4)",background:"rgba(157,23,77,.25)",color:"#f9a8d4",fontSize:13,fontFamily:"'Crimson Pro',serif",cursor:tattooSpend&&parseFloat(tattooSpend)>0?"pointer":"not-allowed",opacity:tattooSpend&&parseFloat(tattooSpend)>0?1:.45,transition:"all .2s"}}>
+                      style={{padding:"7px 14px",borderRadius:8,border:"1px solid rgba(244,114,182,.4)",background:"rgba(157,23,77,.25)",color:"#f9a8d4",fontSize:13,fontFamily:"'Crimson Pro',serif",cursor:tattooSpend&&parseFloat(tattooSpend)>0?"pointer":"not-allowed",opacity:tattooSpend&&parseFloat(tattooSpend)>0?1:.45,transition:"all .2s",whiteSpace:"nowrap"}}>
                       Got a tattoo! Subtract
                     </button>
                   </div>
                 </div>
-
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
                   {rewards.map(r=>{
                     const affordable=canAfford(r), flashing=redeemAnim===r.id;
@@ -448,7 +739,7 @@
                         <div style={{fontSize:28,lineHeight:1}}>{r.icon}</div>
                         <div style={{fontSize:15,color:"#e2d9f3"}}>{r.title}</div>
                         <div style={{marginTop:"auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                          <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:14,color:"#fcd34d",textShadow:"0 0 10px rgba(252,211,77,.5)"}}>{r.cost} pts</span>
+                          <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:14,color:"#fcd34d"}}>{r.cost} pts</span>
                           <button className="rbtn" onClick={()=>affordable&&redeemReward(r)} disabled={!affordable}
                             style={{padding:"5px 12px",borderRadius:8,border:`1px solid ${affordable?"#7c3aed":"#3b0764"}`,background:affordable?"rgba(109,40,217,.3)":"transparent",color:affordable?"#c4b5fd":"#3b0764",fontSize:12,fontFamily:"'Crimson Pro',serif",transition:"all .2s"}}>
                             {affordable?"Redeem":"Locked"}
@@ -458,15 +749,13 @@
                     );
                   })}
                 </div>
-
                 {rewardLog?.length>0&&(
                   <div style={{marginTop:20}}>
                     <div style={{fontSize:11,color:"#4c1d95",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Recent Redemptions</div>
                     <div style={{display:"flex",flexDirection:"column",gap:5}}>
                       {rewardLog.slice(0,8).map(r=>(
                         <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#6d28d9",borderBottom:"1px solid rgba(109,40,217,.1)",paddingBottom:5}}>
-                          <span>{r.icon}</span>
-                          <span style={{flex:1,color:"#a78bfa"}}>{r.title}</span>
+                          <span>{r.icon}</span><span style={{flex:1,color:"#a78bfa"}}>{r.title}</span>
                           {r.tattooAdd>0&&<span style={{color:"#f9a8d4",fontSize:12}}>+${r.tattooAdd}</span>}
                           <span style={{color:"#fcd34d",fontSize:12}}>−{r.cost} pts</span>
                           <span style={{color:"#3b0764",fontSize:11}}>{r.time}</span>
@@ -478,11 +767,11 @@
               </div>
             )}
 
-            {/* LOG */}
+            {/* LOG TAB */}
             {tab==="log"&&(
               <div>
                 {log.length===0?(
-                  <div style={{textAlign:"center",padding:"40px 0",color:"#3b0764",fontSize:14,letterSpacing:2,textTransform:"uppercase"}}>No spells cast yet.<br/>Complete a quest to begin.</div>
+                  <div style={{textAlign:"center",padding:"40px 0",color:"#3b0764",fontSize:14,letterSpacing:2,textTransform:"uppercase"}}>No spells cast yet.</div>
                 ):(
                   <div style={{display:"flex",flexDirection:"column",gap:7}}>
                     {log.map(entry=>(
@@ -504,35 +793,32 @@
               </div>
             )}
 
-            {/* BACKUP */}
+            {/* BACKUP TAB */}
             {tab==="backup"&&(
               <div style={{display:"flex",flexDirection:"column",gap:14,maxWidth:480}}>
                 <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.28)",borderRadius:12,padding:"15px 16px",fontSize:14,color:"#7c3aed",lineHeight:1.7}}>
                   <div style={{color:"#c4b5fd",fontFamily:"'Cinzel Decorative',serif",fontSize:12,letterSpacing:2,marginBottom:8}}>PROTECT YOUR PROGRESS</div>
-                  Your XP, points, streaks, and tattoo fund are saved on this device. Export regularly and keep the file somewhere safe (Google Drive, iCloud, email to yourself).
+                  Your XP, points, streaks, and tattoo fund are saved on this device. Export regularly and keep the file somewhere safe.
                 </div>
-                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"18px 18px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"18px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                     <span style={{fontSize:22}}>📤</span>
                     <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:12,color:"#c4b5fd",letterSpacing:2}}>EXPORT BACKUP</span>
                   </div>
-                  <div style={{fontSize:13,color:"#6d28d9",marginBottom:12,lineHeight:1.6}}>Downloads a <code style={{color:"#a78bfa",background:"rgba(109,40,217,.15)",padding:"1px 4px",borderRadius:3}}>.json</code> file with all your progress.</div>
-                  <button onClick={exportBackup} style={{padding:"9px 20px",borderRadius:9,border:"1px solid #7c3aed",background:"rgba(109,40,217,.3)",color:"#c4b5fd",fontSize:14,fontFamily:"'Crimson Pro',serif",cursor:"pointer",letterSpacing:.5,boxShadow:"0 0 12px rgba(139,92,246,.2)"}}>
-                    ✦ Download Backup
-                  </button>
+                  <button onClick={exportBackup} style={{padding:"9px 20px",borderRadius:9,border:"1px solid #7c3aed",background:"rgba(109,40,217,.3)",color:"#c4b5fd",fontSize:14,fontFamily:"'Crimson Pro',serif",cursor:"pointer",boxShadow:"0 0 12px rgba(139,92,246,.2)"}}>✦ Download Backup</button>
                 </div>
-                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"18px 18px"}}>
+                <div style={{background:"linear-gradient(135deg,rgba(23,8,50,.96),rgba(12,4,30,.98))",border:"1px solid rgba(139,92,246,.3)",borderRadius:12,padding:"18px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
                     <span style={{fontSize:22}}>📥</span>
                     <span style={{fontFamily:"'Cinzel Decorative',serif",fontSize:12,color:"#c4b5fd",letterSpacing:2}}>RESTORE BACKUP</span>
                   </div>
-                  <div style={{fontSize:13,color:"#6d28d9",marginBottom:12,lineHeight:1.6}}>Load a previously exported file. <span style={{color:"#f87171"}}>This will overwrite your current data.</span></div>
+                  <div style={{fontSize:13,color:"#6d28d9",marginBottom:12}}>Load a previously exported file. <span style={{color:"#f87171"}}>This will overwrite your current data.</span></div>
                   <label style={{display:"inline-block",padding:"9px 20px",borderRadius:9,border:"1px solid rgba(248,113,113,.4)",background:"rgba(127,29,29,.2)",color:"#fca5a5",fontSize:14,fontFamily:"'Crimson Pro',serif",cursor:"pointer"}}>
                     ✦ Load Backup File
-                    <input type="file" accept=".json" onChange={importBackup} style={{display:"none"}}/>
+                    <input type="file" accept=".json" onChange={importBackup} style={{display:"none",width:"auto",border:"none",background:"none",padding:0}}/>
                   </label>
                 </div>
-                <div style={{fontSize:12,color:"#3b0764",textAlign:"center",letterSpacing:1}}>Progress auto-saves to this device after every action.</div>
+                <div style={{fontSize:12,color:"#3b0764",textAlign:"center",letterSpacing:1}}>Progress auto-saves after every action.</div>
               </div>
             )}
 
@@ -544,50 +830,29 @@
     ReactDOM.createRoot(document.getElementById("root")).render(<AlyxGrimoire/>);
   </script>
 
-  <!-- PWA service worker registration -->
   <script>
     if("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js").catch(()=>{});
-      });
+      window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
     }
-
-    // Generate placeholder icons via canvas (no image files needed)
+    // Generate canvas icons
     function makeIcon(size) {
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      // Background
-      ctx.fillStyle = "#080611";
-      ctx.fillRect(0,0,size,size);
-      // Outer glow ring
-      const grad = ctx.createRadialGradient(size/2,size/2,size*0.2,size/2,size/2,size*0.48);
-      grad.addColorStop(0,"rgba(139,92,246,0.15)");
-      grad.addColorStop(1,"rgba(139,92,246,0)");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0,0,size,size);
-      // Border circle
-      ctx.strokeStyle = "rgba(139,92,246,0.6)";
-      ctx.lineWidth = size * 0.025;
-      ctx.beginPath();
-      ctx.arc(size/2,size/2,size*0.45,0,Math.PI*2);
-      ctx.stroke();
-      // ✦ symbol
-      ctx.fillStyle = "#c4b5fd";
-      ctx.font = `${size*0.45}px serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(196,181,253,0.8)";
-      ctx.shadowBlur = size * 0.1;
-      ctx.fillText("✦", size/2, size/2);
-      return canvas.toDataURL("image/png");
+      const c=document.createElement("canvas"); c.width=c.height=size;
+      const ctx=c.getContext("2d");
+      ctx.fillStyle="#080611"; ctx.fillRect(0,0,size,size);
+      const g=ctx.createRadialGradient(size/2,size/2,size*.2,size/2,size/2,size*.48);
+      g.addColorStop(0,"rgba(139,92,246,0.15)"); g.addColorStop(1,"rgba(139,92,246,0)");
+      ctx.fillStyle=g; ctx.fillRect(0,0,size,size);
+      ctx.strokeStyle="rgba(139,92,246,0.6)"; ctx.lineWidth=size*.025;
+      ctx.beginPath(); ctx.arc(size/2,size/2,size*.45,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle="#c4b5fd"; ctx.font=`${size*.45}px serif`;
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.shadowColor="rgba(196,181,253,0.8)"; ctx.shadowBlur=size*.1;
+      ctx.fillText("✦",size/2,size/2);
+      return c.toDataURL("image/png");
     }
-
-    // Inject apple-touch-icon dynamically
-    window.addEventListener("DOMContentLoaded", ()=>{
-      const icon192 = makeIcon(192);
-      const link = document.querySelector("link[rel='apple-touch-icon']");
-      if(link) link.href = icon192;
+    window.addEventListener("DOMContentLoaded",()=>{
+      const link=document.querySelector("link[rel='apple-touch-icon']");
+      if(link) link.href=makeIcon(192);
     });
   </script>
 </body>
